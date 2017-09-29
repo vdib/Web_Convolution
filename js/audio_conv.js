@@ -10,7 +10,10 @@ function audioConv(){
 
     var output;
     var audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    var convolver = audioCtx.createConvolver();
+
+    var url;
+    var song = audioCtx.createBufferSource();
+    var offlineCtx;
     var audioPreset = document.getElementById('audioPreset');
     var irPreset = document.getElementById('irPreset');
 
@@ -32,7 +35,7 @@ function audioConv(){
         var inputSound = document.getElementById('inputSound');
         inputSound.src = URL.createObjectURL(this.files[0]);
 
-        outputSound.src = inputSound.src;
+        // outputSound.src = inputSound.src;
     }
 
     function handleImResFileSelect(evt){
@@ -41,12 +44,25 @@ function audioConv(){
         impulseResponseSound.src = URL.createObjectURL(this.files[0]);
         var files = evt.target.files;
 
-        var fileReader = new FileReader;
+        var fileReader = new FileReader();
         fileReader.readAsArrayBuffer(this.files[0]);
         fileReader.onload = function(){
             var arrayBuffer = this.result;
             audioCtx.decodeAudioData(arrayBuffer, function(buffer) {
                 convolver.buffer = buffer;
+                source.connect(convolver);
+                convolver.connect(offlineCtx.destination);
+                source.start();
+                offlineCtx.startRendering().then(function(renderedBuffer) {
+                    console.log('Rendering completed successfully');
+                    var blob = new Blob([renderedBuffer], type='audio/wav');
+                    var url = URL.createObjectURL(blob);
+                    outputSound.src = url;
+                      
+                }).catch(function(err) {
+                    console.log('Rendering failed: ' + err);
+                    // Note: The promise should reject when startRendering is called a second time on an OfflineAudioContext
+                });
             });
         }
     }
@@ -62,21 +78,67 @@ function audioConv(){
         ajaxRequest.onload = function(e) {
             var audioData = ajaxRequest.response;
             audioCtx.decodeAudioData(audioData, function(buffer) {
-                audioBuffer = buffer;
-                convolver.buffer = audioBuffer;
+
+                var convolver = offlineCtx.createConvolver();
+                convolver.buffer = buffer;
+                
+                source.connect(convolver);
+                convolver.connect(offlineCtx.destination);
+                //source.start();
+                
+                offlineCtx.startRendering().then(function(renderedBuffer) {
+                    console.log('Rendering completed successfully');
+                     
+                    var blob = new Blob([renderedBuffer], {type: "audio/wav"});
+                    url = URL.createObjectURL(blob);
+                    outputSound.src = url;
+
+
+                    document.getElementById('play').onclick = function() {
+                        outputSound.start();
+                      }
+                    // document.getElementById('stop').onclick = function() {
+                        
+                    //   }
+                      
+                }).catch(function(err) {
+                    console.log('Rendering failed: ' + err);
+                    // Note: The promise should reject when startRendering is called a second time on an OfflineAudioContext
+                });
+            });
+        }
+        ajaxRequest.send();
+    }
+
+    function loadAudioPreset(audioURL){
+        inputSound.src = audioURL;
+        var inputAudioBuffer;
+        var ajaxRequest = new XMLHttpRequest();
+
+        ajaxRequest.open('GET', audioURL, true);
+        ajaxRequest.responseType = 'arraybuffer';
+
+        ajaxRequest.onload = function(e) {
+            var audioData = ajaxRequest.response;
+            audioCtx.decodeAudioData(audioData, function(buffer) {
+                inputAudioBuffer = buffer;
+                offlineCtx = new OfflineAudioContext(2,48000*40,48000);
+                source = offlineCtx.createBufferSource();
+                source.buffer = inputAudioBuffer;
             }, function(e){"Error with decoding audio data" + e.err});
         }
         ajaxRequest.send();
     }
 
+
     function onAudioSelect(evt){
         var selectedPreset = audioPreset.value;
         switch (selectedPreset) {
             case 'theForce':
-            outputSound.src = inputSound.src = 'music/force.mp3';
+            loadAudioPreset('music/force.mp3');
             break;
             case 'chime':
-            outputSound.src = inputSound.src = 'music/chime.mp3';
+            loadAudioPreset('music/chime.mp3');
             break;
             default:
             alert('preset selected');
@@ -115,9 +177,10 @@ function audioConv(){
         }
     }
 
+
     function playOutput(evt){
-        output.connect(convolver);
-        convolver.connect(audioCtx.destination);
+        // output.connect(convolver);
+        // convolver.connect(audioCtx.destination);
     }
 
     //pauseOutput event needed to remove trailing sound due to convolution
@@ -135,5 +198,6 @@ function audioConv(){
     //document.getElementById('irPreset').onchange = onIrPresetSelect;
 
     var outputSound = document.getElementById('outputSound');
-    output = audioCtx.createMediaElementSource(outputSound);
+    // output = audioCtx.createMediaElementSource(outputSound);
+
 }
